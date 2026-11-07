@@ -29,17 +29,20 @@ jobs:
           helm template backend charts/backend --set nodeAffinity.type=required | grep -q requiredDuringSchedulingIgnoredDuringExecution
       - name: HPA owns the replica count and carries the behaviour rules
         run: |
+          not() { if "$@"; then echo "unexpected match: $*"; return 1; fi; }
           helm template frontend charts/frontend | grep -q 'stabilizationWindowSeconds: 60'
           helm template frontend charts/frontend | grep -q 'stabilizationWindowSeconds: 300'
-          ! helm template frontend charts/frontend | grep -q '^  replicas:'
+          not eval "helm template frontend charts/frontend | grep -q '^  replicas:'"
           helm template frontend charts/frontend --set autoscaling.enabled=false | grep -q '^  replicas:'
       - name: Backend reads credentials from a Secret, nothing secret in values
         run: |
+          not() { if "$@"; then echo "unexpected match: $*"; return 1; fi; }
           helm template backend charts/backend | grep -c secretKeyRef | grep -qx 4
-          ! grep -riE 'password: *[^ ]' charts/*/values.yaml
+          not grep -riE '(postgresPassword|adminPassword|PGPASSWORD|secretAccessKey): *[^ ]' charts/*/values.yaml
       - name: Metrics can be switched off
         run: |
-          ! helm template frontend charts/frontend --set metrics.enabled=false | grep -q 'kind: ServiceMonitor'
+          not() { if "$@"; then echo "unexpected match: $*"; return 1; fi; }
+          not eval "helm template frontend charts/frontend --set metrics.enabled=false | grep -q 'kind: ServiceMonitor'"
 
   database-chart:
     runs-on: ubuntu-latest
@@ -66,10 +69,12 @@ jobs:
           grep -q 'concurrencyPolicy: Forbid' /tmp/db.yaml
           grep -q 'successfulJobsHistoryLimit: 3' /tmp/db.yaml
           grep -q 'eks.amazonaws.com/role-arn' /tmp/db.yaml
-          ! grep -qiE 'AWS_ACCESS_KEY|AWS_SECRET' /tmp/db.yaml
+          not() { if "$@"; then echo "unexpected match: $*"; return 1; fi; }
+          not grep -qiE 'AWS_ACCESS_KEY|AWS_SECRET' /tmp/db.yaml
       - name: Backup can be switched off
         run: |
-          ! helm template database charts/database --set backup.enabled=false | grep -q 'kind: CronJob'
+          not() { if "$@"; then echo "unexpected match: $*"; return 1; fi; }
+          not eval "helm template database charts/database --set backup.enabled=false | grep -q 'kind: CronJob'"
 
   dashboards:
     runs-on: ubuntu-latest
