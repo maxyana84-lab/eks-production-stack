@@ -1,0 +1,48 @@
+name: helmfile
+
+on:
+  push:
+    branches: [main]
+    paths: ["helmfile.yaml", "values/**", "environments/**", "charts/**", "scripts/check_helmfile.py", ".github/workflows/helmfile.yml"]
+  pull_request:
+    paths: ["helmfile.yaml", "values/**", "environments/**", "charts/**", "scripts/check_helmfile.py", ".github/workflows/helmfile.yml"]
+  workflow_dispatch:
+
+env:
+  HELMFILE_VERSION: v1.1.5
+
+jobs:
+  helmfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.18.6
+      - name: Install helmfile
+        run: |
+          curl -fsSL "https://github.com/helmfile/helmfile/releases/download/${HELMFILE_VERSION}/helmfile_${HELMFILE_VERSION#v}_linux_amd64.tar.gz" | tar xz helmfile
+          sudo mv helmfile /usr/local/bin/
+          helmfile --version
+      - name: Release graph and namespaces
+        run: |
+          helmfile build | python3 scripts/check_helmfile.py
+      - name: helmfile lint
+        run: helmfile lint
+      - name: helmfile template (default environment)
+        run: |
+          helmfile template > /tmp/default.yaml
+          for k in Deployment StatefulSet Ingress HorizontalPodAutoscaler VerticalPodAutoscaler ServiceMonitor PrometheusRule CronJob ExternalSecret; do
+            grep -q "^kind: $k\$" /tmp/default.yaml || { echo "missing kind $k"; exit 1; }
+          done
+          [ "$(grep -c '^kind: HorizontalPodAutoscaler$' /tmp/default.yaml)" = 2 ]
+          grep -q 'external-dns.alpha.kubernetes.io/hostname: "app.example.com"' /tmp/default.yaml
+          grep -q 'external-dns.alpha.kubernetes.io/hostname: "api.example.com"' /tmp/default.yaml
+      - name: helmfile template (staging environment overrides)
+        run: |
+          helmfile -e staging template > /tmp/staging.yaml
+          grep -q 'app.staging.example.com' /tmp/staging.yaml
+          grep -q 'eks-staging' /tmp/staging.yaml
+      - name: Prometheus discovers ServiceMonitors from all namespaces
+        run: |
+          helmfile template -l name=kube-prometheus-stack | grep -q 'serviceMonitorSelectorNilUsesHelmValues\|serviceMonitorSelector: {}'

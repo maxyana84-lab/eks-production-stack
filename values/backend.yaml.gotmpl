@@ -1,0 +1,12 @@
+image:
+  tag: {{ .Values.imageTag }}
+ingress:
+  host: api.{{ .Values.domain }}
+{{- if .Values.certificateArn }}
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.certificateArn }}
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+{{- else }}
+  annotations:
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+{{- end }}

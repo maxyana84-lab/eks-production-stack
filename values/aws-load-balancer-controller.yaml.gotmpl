@@ -1,0 +1,8 @@
+clusterName: {{ .Values.clusterName }}
+region: {{ .Values.region }}
+vpcId: {{ .Values.vpcId }}
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::{{ .Values.accountId }}:role/{{ .Values.clusterName }}-aws-lb-controller

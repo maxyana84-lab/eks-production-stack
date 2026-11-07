@@ -1,0 +1,3 @@
+# Section 6.1
+args:
+  - --kubelet-preferred-address-types=InternalIP

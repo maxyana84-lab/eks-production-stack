@@ -1,0 +1,8 @@
+# Section 6.3: only the recommender: the updater and the admission controller would evict and mutate pods,
+# but we use VPA in "Off" mode (recommendations only) next to the HPA.
+recommender:
+  enabled: true
+updater:
+  enabled: false
+admissionController:
+  enabled: false

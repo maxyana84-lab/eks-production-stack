@@ -1,0 +1,12 @@
+# Section 10.1: controller; the NodePools and the EC2NodeClass are in charts/karpenter-config
+settings:
+  clusterName: {{ .Values.clusterName }}
+  interruptionQueue: {{ .Values.clusterName }}        # SQS queue for spot interruptions (aws/karpenter-cloudformation.sh)
+serviceAccount:
+  name: karpenter
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::{{ .Values.accountId }}:role/{{ .Values.clusterName }}-karpenter
+controller:
+  resources:
+    requests: {cpu: 500m, memory: 512Mi}
+    limits: {cpu: "1", memory: 1Gi}
