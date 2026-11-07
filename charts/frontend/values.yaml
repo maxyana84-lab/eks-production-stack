@@ -1,0 +1,75 @@
+replicaCount: 2            # ignored once the HPA is enabled (the HPA owns the replica count)
+
+image:
+  repository: ghcr.io/maxyana84-lab/eks-stack-frontend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+containerPort: 8080
+apiUrl: https://api.example.com      # the backend host the browser talks to
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: 500m, memory: 256Mi}
+
+probes:
+  path: /health
+
+# Soft preference for the app nodes (role=app). Use type: required for a hard rule.
+nodeAffinity:
+  enabled: true
+  type: preferred
+  weight: 100
+  key: role
+  values: [app]
+tolerations: []
+
+ingress:
+  enabled: true
+  className: alb
+  host: app.example.com
+  path: /
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:...   (HTTPS)
+  externalDns:
+    enabled: true                    # adds external-dns.alpha.kubernetes.io/hostname = ingress.host
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+
+# Vertical Pod Autoscaler in recommendation-only mode (it must not fight the HPA)
+vpa:
+  enabled: true
+  updateMode: "Off"
+
+metrics:
+  enabled: true
+  path: /metrics
+  interval: 30s
+  serviceMonitor:
+    labels: {}
+
+alerts:
+  enabled: true
+  errorRatePercent: 5
+  for: 5m
+
+dashboard:
+  enabled: true

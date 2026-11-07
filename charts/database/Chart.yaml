@@ -1,0 +1,10 @@
+apiVersion: v2
+name: database
+description: Wrapper chart around the Bitnami PostgreSQL chart plus backup CronJob, ExternalSecret, VPA and dashboard
+type: application
+version: 0.1.0
+appVersion: "17"
+dependencies:
+  - name: postgresql
+    version: "16.x.x"                      # pinned to a major version
+    repository: oci://registry-1.docker.io/bitnamicharts

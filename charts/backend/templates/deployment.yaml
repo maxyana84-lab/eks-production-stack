@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "app.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "app.labels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      {{- include "app.affinity" . | nindent 6 }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+          env:
+            - name: PORT
+              value: {{ .Values.containerPort | quote }}
+            {{- $db := .Values.database }}
+            - name: DB_HOST
+              valueFrom: {secretKeyRef: {name: {{ $db.secretName }}, key: {{ $db.keys.host }}}}
+            - name: DB_PORT
+              valueFrom: {secretKeyRef: {name: {{ $db.secretName }}, key: {{ $db.keys.port }}}}
+            - name: DB_USER
+              valueFrom: {secretKeyRef: {name: {{ $db.secretName }}, key: {{ $db.keys.user }}}}
+            - name: DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $db.secretName }}, key: {{ $db.keys.password }}}}
+          envFrom:
+            - configMapRef:
+                name: {{ include "app.fullname" . }}
+          readinessProbe:
+            httpGet: {path: {{ .Values.probes.readiness }}, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: {{ .Values.probes.liveness }}, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

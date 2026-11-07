@@ -1,0 +1,87 @@
+replicaCount: 2            # ignored once the HPA is enabled (the HPA owns the replica count)
+
+image:
+  repository: ghcr.io/maxyana84-lab/eks-stack-backend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+containerPort: 8000
+
+service:
+  type: ClusterIP
+  port: 80
+
+# Non-sensitive settings go to a ConfigMap
+config:
+  DB_NAME: appdb
+  LOG_LEVEL: info
+
+# Credentials come from a Secret that the ExternalSecrets operator creates (see the database chart).
+# Nothing secret lives in this repository. The keys of the Secret are mapped to the DB_* variables.
+database:
+  secretName: db-credentials
+  keys:
+    host: host
+    port: port
+    user: username
+    password: password
+
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: 500m, memory: 256Mi}
+
+probes:
+  liveness: /health
+  readiness: /ready          # checks the database connection
+
+nodeAffinity:
+  enabled: true
+  type: preferred
+  weight: 100
+  key: role
+  values: [app]
+tolerations: []
+
+ingress:
+  enabled: true
+  className: alb
+  host: api.example.com
+  path: /
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+  externalDns:
+    enabled: true
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+
+vpa:
+  enabled: true
+  updateMode: "Off"
+
+metrics:
+  enabled: true
+  path: /metrics
+  interval: 30s
+  serviceMonitor:
+    labels: {}
+
+alerts:
+  enabled: true
+  errorRatePercent: 5
+  for: 5m
+
+dashboard:
+  enabled: true

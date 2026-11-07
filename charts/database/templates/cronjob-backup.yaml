@@ -1,0 +1,74 @@
+{{- if .Values.backup.enabled }}
+{{- $b := .Values.backup }}
+{{- $name := printf "%s-backup" (include "db.fullname" .) }}
+{{- $host := include "db.fullname" . }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "db.labels" . | nindent 4 }}
+spec:
+  schedule: {{ $b.schedule | quote }}
+  concurrencyPolicy: {{ $b.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ $b.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $b.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            {{- include "db.labels" . | nindent 12 }}
+        spec:
+          serviceAccountName: {{ $name }}
+          restartPolicy: Never
+          # run next to the database: db nodes only, tolerating their taint
+          {{- with .Values.postgresql.primary.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumes:
+            - name: dump
+              emptyDir: {}
+          initContainers:
+            # 1. dump and compress (pg_dump client)
+            - name: dump
+              image: {{ $b.image.dump }}
+              env:
+                - {name: PGHOST, value: {{ $host | quote }}}
+                - {name: PGDATABASE, value: {{ .Values.postgresql.auth.database | quote }}}
+                - name: PGUSER
+                  valueFrom: {secretKeyRef: {name: {{ .Values.externalSecret.name }}, key: username}}
+                - name: PGPASSWORD
+                  valueFrom: {secretKeyRef: {name: {{ .Values.externalSecret.name }}, key: password}}
+              command: ["/bin/sh", "-c"]
+              args:
+                - set -euo pipefail; pg_dump --no-owner --clean --if-exists | gzip > /dump/db.sql.gz; ls -l /dump
+              volumeMounts:
+                - {name: dump, mountPath: /dump}
+              {{- with $b.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          containers:
+            # 2. upload with a timestamped name; credentials come from IRSA, never from keys
+            - name: upload
+              image: {{ $b.image.upload }}
+              env:
+                - {name: BUCKET, value: {{ $b.bucket | quote }}}
+                - {name: PREFIX, value: {{ $b.prefix | quote }}}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  target="s3://${BUCKET}/${PREFIX}/db-$(date +%Y%m%d-%H%M%S).sql.gz"
+                  aws s3 cp /dump/db.sql.gz "$target"
+                  echo "uploaded $target"
+              volumeMounts:
+                - {name: dump, mountPath: /dump}
+              {{- with $b.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+{{- end }}

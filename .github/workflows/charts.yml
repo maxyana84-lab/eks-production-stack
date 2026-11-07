@@ -1,0 +1,81 @@
+name: charts
+
+on:
+  push:
+    branches: [main]
+    paths: ["charts/**", "scripts/**", ".github/workflows/charts.yml"]
+  pull_request:
+    paths: ["charts/**", "scripts/**", ".github/workflows/charts.yml"]
+  workflow_dispatch:
+
+jobs:
+  app-charts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint and render frontend and backend
+        run: |
+          for c in frontend backend; do
+            helm lint charts/$c
+            helm template $c charts/$c > /tmp/$c.yaml
+            for k in Deployment Service Ingress HorizontalPodAutoscaler VerticalPodAutoscaler ServiceMonitor PrometheusRule; do
+              grep -q "^kind: $k\$" /tmp/$c.yaml || { echo "$c: missing $k"; exit 1; }
+            done
+          done
+      - name: Placement rules (soft for apps, configurable)
+        run: |
+          helm template backend charts/backend | grep -q preferredDuringSchedulingIgnoredDuringExecution
+          helm template backend charts/backend --set nodeAffinity.type=required | grep -q requiredDuringSchedulingIgnoredDuringExecution
+      - name: HPA owns the replica count and carries the behaviour rules
+        run: |
+          helm template frontend charts/frontend | grep -q 'stabilizationWindowSeconds: 60'
+          helm template frontend charts/frontend | grep -q 'stabilizationWindowSeconds: 300'
+          ! helm template frontend charts/frontend | grep -q '^  replicas:'
+          helm template frontend charts/frontend --set autoscaling.enabled=false | grep -q '^  replicas:'
+      - name: Backend reads credentials from a Secret, nothing secret in values
+        run: |
+          helm template backend charts/backend | grep -c secretKeyRef | grep -qx 4
+          ! grep -riE 'password: *[^ ]' charts/*/values.yaml
+      - name: Metrics can be switched off
+        run: |
+          ! helm template frontend charts/frontend --set metrics.enabled=false | grep -q 'kind: ServiceMonitor'
+
+  database-chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Pull the Bitnami subchart and lint
+        run: |
+          helm dependency build charts/database
+          helm lint charts/database
+      - name: Full render (StatefulSet from Bitnami plus our templates)
+        run: |
+          helm template database charts/database --namespace production > /tmp/db.yaml
+          for k in StatefulSet Service CronJob ExternalSecret ClusterSecretStore VerticalPodAutoscaler ServiceMonitor; do
+            grep -q "^kind: $k\$" /tmp/db.yaml || { echo "missing $k"; exit 1; }
+          done
+          grep -q 'workload' /tmp/db.yaml          # toleration
+          grep -q 'role' /tmp/db.yaml              # node affinity
+          grep -q 'storageClassName: gp3\|storageClass: gp3' /tmp/db.yaml
+          grep -q 'postgres-exporter' /tmp/db.yaml  # metrics sidecar
+      - name: Backup CronJob
+        run: |
+          grep -q 'schedule: "0 \*/6 \* \* \*"' /tmp/db.yaml
+          grep -q 'concurrencyPolicy: Forbid' /tmp/db.yaml
+          grep -q 'successfulJobsHistoryLimit: 3' /tmp/db.yaml
+          grep -q 'eks.amazonaws.com/role-arn' /tmp/db.yaml
+          ! grep -qiE 'AWS_ACCESS_KEY|AWS_SECRET' /tmp/db.yaml
+      - name: Backup can be switched off
+        run: |
+          ! helm template database charts/database --set backup.enabled=false | grep -q 'kind: CronJob'
+
+  dashboards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dashboards are up to date with the generator
+        run: |
+          python3 scripts/gen_dashboards.py
+          git diff --exit-code charts/*/files/dashboard.json
