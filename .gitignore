@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.tgz
+charts/*/charts/
+charts/*/Chart.lock
+helmfile.lock
+.idea/
+.vscode/
