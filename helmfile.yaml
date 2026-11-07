@@ -87,6 +87,14 @@ releases:
     values:
       - values/karpenter.yaml.gotmpl
 
+  - name: karpenter-config          # NodePools (app, database) and the EC2NodeClass
+    namespace: karpenter
+    chart: ./charts/karpenter-config
+    needs:
+      - karpenter/karpenter                       # the CRDs come with the controller chart
+    values:
+      - values/karpenter-config.yaml.gotmpl
+
   # ---------------------------------------------------------------- cluster add-ons the stack relies on
   - name: metrics-server            # kubectl top, HPA (Section 6.1); EKS does not ship it by default
     namespace: kube-system

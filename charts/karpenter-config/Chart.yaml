@@ -1,0 +1,6 @@
+apiVersion: v2
+name: karpenter-config
+description: Karpenter v1 NodePools (app and database) and the EC2NodeClass they share
+type: application
+version: 0.1.0
+appVersion: "1.6.3"

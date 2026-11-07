@@ -1,0 +1,13 @@
+# EKS only ships gp2; the charts ask for gp3. Apply once, before helmfile sync:
+#   kubectl apply -f aws/storageclass-gp3.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+volumeBindingMode: WaitForFirstConsumer     # the volume is created in the zone of the node that gets the pod
+allowVolumeExpansion: true
+reclaimPolicy: Delete
