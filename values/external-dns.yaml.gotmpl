@@ -1,0 +1,18 @@
+# Section 8.1: creates and DELETES Route53 records for annotated Ingresses (policy sync)
+provider:
+  name: aws
+policy: sync
+registry: txt
+txtOwnerId: {{ .Values.clusterName }}        # unique per cluster
+sources:
+  - ingress
+domainFilters:
+  - {{ .Values.domain }}                     # only this hosted zone
+env:
+  - name: AWS_DEFAULT_REGION
+    value: {{ .Values.region }}
+serviceAccount:
+  create: true
+  name: external-dns
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::{{ .Values.accountId }}:role/{{ .Values.clusterName }}-external-dns

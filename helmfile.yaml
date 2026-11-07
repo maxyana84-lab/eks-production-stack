@@ -1,0 +1,138 @@
+# One declarative deployment for the whole stack:   helmfile lint | diff | sync
+#   helmfile -e staging sync      uses environments/staging.yaml on top of environments/default.yaml
+#
+# Release order (needs:) is the dependency graph, helmfile deploys it in this order:
+#   kube-prometheus-stack, external-secrets, external-dns, karpenter           (no dependencies)
+#   metrics-server, vpa, aws-load-balancer-controller                           (cluster add-ons, see README)
+#   database  -> needs external-secrets (the credentials Secret), and the CRDs of Prometheus and VPA
+#   backend   -> needs database
+#   frontend  -> needs backend
+
+environments:
+  default:
+    values:
+      - environments/default.yaml
+  staging:
+    values:
+      - environments/default.yaml
+      - environments/staging.yaml
+
+---
+repositories:
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+  - name: external-secrets
+    url: https://charts.external-secrets.io
+  - name: external-dns
+    url: https://kubernetes-sigs.github.io/external-dns/
+  - name: karpenter
+    url: public.ecr.aws/karpenter
+    oci: true
+  - name: eks
+    url: https://aws.github.io/eks-charts
+  - name: metrics-server
+    url: https://kubernetes-sigs.github.io/metrics-server/
+  - name: fairwinds-stable
+    url: https://charts.fairwinds.com/stable
+
+helmDefaults:
+  wait: true
+  timeout: 900
+  createNamespace: true
+  cleanupOnFail: true
+
+releases:
+  # ---------------------------------------------------------------- monitoring (Section 5)
+  - name: kube-prometheus-stack
+    namespace: monitoring
+    chart: prometheus-community/kube-prometheus-stack
+    version: 75.15.1
+    values:
+      - values/kube-prometheus-stack.yaml.gotmpl
+    hooks:
+      # Grafana admin password lives in a Secret, never in Git: created once with a random value
+      - events: ["presync"]
+        showlogs: true
+        command: bash
+        args:
+          - -c
+          - |
+            kubectl get ns monitoring >/dev/null 2>&1 || kubectl create ns monitoring
+            kubectl -n monitoring get secret grafana-admin >/dev/null 2>&1 || \
+              kubectl -n monitoring create secret generic grafana-admin \
+                --from-literal=admin-user=admin \
+                --from-literal=admin-password="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)"
+
+  # ---------------------------------------------------------------- secrets (Section 9)
+  - name: external-secrets
+    namespace: external-secrets
+    chart: external-secrets/external-secrets
+    version: 0.19.2
+    values:
+      - values/external-secrets.yaml.gotmpl
+
+  # ---------------------------------------------------------------- DNS (Section 8)
+  - name: external-dns
+    namespace: external-dns
+    chart: external-dns/external-dns
+    version: 1.18.0
+    values:
+      - values/external-dns.yaml.gotmpl
+
+  # ---------------------------------------------------------------- nodes (Section 10)
+  - name: karpenter
+    namespace: karpenter
+    chart: karpenter/karpenter
+    version: 1.6.3
+    values:
+      - values/karpenter.yaml.gotmpl
+
+  # ---------------------------------------------------------------- cluster add-ons the stack relies on
+  - name: metrics-server            # kubectl top, HPA (Section 6.1); EKS does not ship it by default
+    namespace: kube-system
+    chart: metrics-server/metrics-server
+    version: 3.12.2
+    values:
+      - values/metrics-server.yaml
+
+  - name: vpa                       # Vertical Pod Autoscaler: recommender only (Section 6.3)
+    namespace: vpa
+    chart: fairwinds-stable/vpa
+    version: 4.7.2
+    values:
+      - values/vpa.yaml
+
+  - name: aws-load-balancer-controller   # turns the Ingress objects into ALBs
+    namespace: kube-system
+    chart: eks/aws-load-balancer-controller
+    version: 1.13.4
+    values:
+      - values/aws-load-balancer-controller.yaml.gotmpl
+
+  # ---------------------------------------------------------------- the application (Section 2, 4, 6, 7)
+  - name: database
+    namespace: production
+    chart: ./charts/database
+    needs:
+      - external-secrets/external-secrets         # creates the db-credentials Secret
+      - monitoring/kube-prometheus-stack          # ServiceMonitor, PrometheusRule CRDs
+      - vpa/vpa                                   # VerticalPodAutoscaler CRD
+    values:
+      - values/database.yaml.gotmpl
+
+  - name: backend
+    namespace: production
+    chart: ./charts/backend
+    needs:
+      - production/database
+      - kube-system/aws-load-balancer-controller  # the Ingress needs the controller
+    values:
+      - values/backend.yaml.gotmpl
+
+  - name: frontend
+    namespace: production
+    chart: ./charts/frontend
+    needs:
+      - production/backend
+    values:
+      - values/frontend.yaml.gotmpl

@@ -1,0 +1,38 @@
+# Section 5.1: monitoring stack in the "monitoring" namespace
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    # discover ServiceMonitors, PodMonitors, rules and probes of ALL namespaces, not only this release's
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi            # at least 10Gi
+    nodeSelector:
+      role: app
+
+alertmanager:
+  enabled: true
+
+grafana:
+  enabled: true
+  # the password comes from a Secret created by the presync hook of the release
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  nodeSelector:
+    role: app
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard          # the charts publish their dashboards as ConfigMaps with this label
+      labelValue: "1"
+      searchNamespace: ALL

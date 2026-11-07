@@ -1,0 +1,12 @@
+# Settings that differ between clusters and accounts. Override with: helmfile -e staging sync
+clusterName: eks-production
+region: us-east-1
+accountId: "111111111111"         # AWS account that owns the IAM roles (aws/create-roles.sh)
+domain: example.com               # a hosted zone you own in Route53: app.<domain> and api.<domain> are created
+vpcId: vpc-0123456789abcdef0      # needed by the AWS Load Balancer Controller
+certificateArn: ""                # optional ACM certificate; empty = plain HTTP on the ALB
+imageTag: latest                  # tag of the frontend and backend images (a commit SHA in CI)
+secrets:
+  dbCredentialsKey: my-app/production/db-credentials   # AWS Secrets Manager secret (JSON: username, password, host, port)
+backup:
+  bucket: eks-production-db-backups                    # S3 bucket created by aws/create-backup-bucket.sh

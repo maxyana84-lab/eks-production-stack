@@ -1,0 +1,7 @@
+externalSecret:
+  secretStore:
+    region: {{ .Values.region }}
+  remoteKey: {{ .Values.secrets.dbCredentialsKey }}
+backup:
+  bucket: {{ .Values.backup.bucket }}
+  roleArn: arn:aws:iam::{{ .Values.accountId }}:role/{{ .Values.clusterName }}-db-backup

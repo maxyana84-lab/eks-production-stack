@@ -1,0 +1,7 @@
+# Example of an environment override: helmfile -e staging sync
+clusterName: eks-staging
+domain: staging.example.com
+secrets:
+  dbCredentialsKey: my-app/staging/db-credentials
+backup:
+  bucket: eks-staging-db-backups
