@@ -1,0 +1,73 @@
+name: aws
+
+on:
+  push:
+    branches: [main]
+    paths: ["aws/**", "charts/karpenter-config/**", "scripts/gen_s3_lifecycle.py", "charts/database/values.yaml", ".github/workflows/aws.yml"]
+  pull_request:
+    paths: ["aws/**", "charts/karpenter-config/**", "scripts/gen_s3_lifecycle.py", "charts/database/values.yaml", ".github/workflows/aws.yml"]
+  workflow_dispatch:
+
+jobs:
+  aws:
+    runs-on: ubuntu-latest
+    env:
+      CLUSTER_NAME: eks-production
+      REGION: us-east-1
+      ACCOUNT_ID: "111111111111"
+      HOSTED_ZONE_ID: Z0123456789ABC
+      BACKUP_BUCKET: eks-production-db-backups
+      SECRET_PREFIX: my-app/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.18.6
+      - run: pip install pyyaml
+      - name: Shell scripts
+        run: |
+          for f in aws/*.sh; do bash -n "$f"; done
+          shellcheck aws/*.sh
+      - name: eksctl ClusterConfig (two node groups, taint, OIDC)
+        run: |
+          envsubst < aws/cluster.yaml > /tmp/cluster.yaml
+          python3 - <<'PY'
+          import yaml
+          c = yaml.safe_load(open("/tmp/cluster.yaml"))
+          assert c["iam"]["withOIDC"] is True
+          ng = {g["name"]: g for g in c["managedNodeGroups"]}
+          assert (ng["app-nodes"]["labels"], ng["app-nodes"]["minSize"], ng["app-nodes"]["maxSize"]) == ({"role": "app"}, 2, 5)
+          db = ng["db-nodes"]
+          assert (db["labels"], db["minSize"], db["maxSize"], db["spot"]) == ({"role": "db"}, 1, 2, False)
+          assert db["taints"] == [{"key": "workload", "value": "database", "effect": "NoSchedule"}]
+          assert c["metadata"]["tags"]["karpenter.sh/discovery"] == "eks-production"
+          print("cluster config OK")
+          PY
+      - name: IAM policies are valid JSON and scoped
+        run: |
+          for f in aws/policies/*.json; do envsubst < "$f" | python3 -m json.tool > /dev/null; done
+          envsubst < aws/policies/db-backup.json | python3 -c '
+          import json, sys
+          p = json.load(sys.stdin)["Statement"]
+          assert len(p) == 1 and sorted(p[0]["Action"]) == ["s3:GetObject", "s3:PutObject"]
+          assert p[0]["Resource"] == ["arn:aws:s3:::eks-production-db-backups/*"]'
+          envsubst < aws/policies/external-dns.json | grep -q 'hostedzone/Z0123456789ABC'
+          envsubst < aws/policies/external-secrets.json | grep -q 'secret:my-app/\*'
+      - name: S3 lifecycle (30 / 60 / 90 days) is in sync with the chart
+        run: |
+          python3 scripts/gen_s3_lifecycle.py > /tmp/lifecycle.json
+          diff /tmp/lifecycle.json aws/s3-lifecycle.json
+          python3 -c '
+          import json
+          r = json.load(open("/tmp/lifecycle.json"))["Rules"][0]
+          assert [(t["Days"], t["StorageClass"]) for t in r["Transitions"]] == [(30, "STANDARD_IA"), (60, "GLACIER")]
+          assert r["Expiration"]["Days"] == 90'
+      - name: Karpenter NodePools and EC2NodeClass
+        run: |
+          helm lint charts/karpenter-config
+          helm template kc charts/karpenter-config > /tmp/kc.yaml
+          [ "$(grep -c '^kind: NodePool$' /tmp/kc.yaml)" = 2 ]
+          grep -q '^kind: EC2NodeClass$' /tmp/kc.yaml
+          grep -q 'cpu: "20"' /tmp/kc.yaml && grep -q 'memory: 80Gi' /tmp/kc.yaml
+          grep -q 'consolidationPolicy: WhenEmptyOrUnderutilized' /tmp/kc.yaml
+          grep -q 'workload' /tmp/kc.yaml

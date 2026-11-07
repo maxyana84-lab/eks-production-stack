@@ -1,0 +1,32 @@
+clusterName: eks-production
+
+# Shared node configuration: subnets and security groups are found by the tag set by eksctl (aws/cluster.yaml),
+# the AMI by an alias, the instance role is the one created by aws/karpenter-cloudformation.sh.
+nodeClass:
+  name: default
+  role: ""                         # KarpenterNodeRole-<clusterName> when empty
+  amiAlias: al2023@latest
+  volumeSize: 50Gi
+
+nodePools:
+  # application workloads: frontend, backend, monitoring
+  - name: app
+    labels: {role: app}
+    taints: []
+    instanceCategories: [c, m, r]
+    capacityTypes: [spot, on-demand]
+    limits: {cpu: "20", memory: 80Gi}
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+    expireAfter: 720h
+  # databases: memory optimised, on-demand only (never spot), isolated by a taint
+  - name: database
+    labels: {role: db}
+    taints:
+      - {key: workload, value: database, effect: NoSchedule}
+    instanceCategories: [r]
+    capacityTypes: [on-demand]
+    limits: {cpu: "8", memory: 64Gi}
+    consolidationPolicy: WhenEmpty         # never move a running database to "save" a node
+    consolidateAfter: 10m
+    expireAfter: 720h

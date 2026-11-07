@@ -1,0 +1,43 @@
+{{- range .Values.nodePools }}
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: {{ .name }}
+spec:
+  template:
+    metadata:
+      labels:
+        {{- toYaml .labels | nindent 8 }}
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: {{ $.Values.nodeClass.name }}
+      {{- with .taints }}
+      taints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      requirements:
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: {{ toJson .instanceCategories }}
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["4"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: {{ toJson .capacityTypes }}
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+      expireAfter: {{ .expireAfter }}
+  limits:
+    {{- toYaml .limits | nindent 4 }}
+  disruption:
+    consolidationPolicy: {{ .consolidationPolicy }}
+    consolidateAfter: {{ .consolidateAfter }}
+{{- end }}

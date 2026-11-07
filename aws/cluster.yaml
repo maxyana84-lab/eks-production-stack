@@ -1,0 +1,57 @@
+# Section 4.1: two EKS managed node groups, plus the add-ons the stack needs.
+#   export CLUSTER_NAME=eks-production REGION=us-east-1 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+#   envsubst < aws/cluster.yaml | eksctl create cluster -f -
+# Run aws/karpenter-cloudformation.sh FIRST: it creates the node role that is mapped below.
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: ${CLUSTER_NAME}
+  region: ${REGION}
+  # Check that the version is supported by EKS and by the pinned Karpenter release
+  # (compatibility matrix in the Karpenter docs); bump both together.
+  version: "1.33"
+  tags:
+    karpenter.sh/discovery: ${CLUSTER_NAME}      # Karpenter finds subnets and security groups by this tag
+
+iam:
+  withOIDC: true                                  # IRSA: every IAM role below trusts this OIDC provider
+
+# The nodes Karpenter creates join the cluster with this role
+iamIdentityMappings:
+  - arn: arn:aws:iam::${ACCOUNT_ID}:role/KarpenterNodeRole-${CLUSTER_NAME}
+    username: system:node:{{EC2PrivateDNSName}}
+    groups: [system:bootstrappers, system:nodes]
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver                      # gp3 volumes for PostgreSQL and Prometheus
+    wellKnownPolicies:
+      ebsCSIController: true
+
+managedNodeGroups:
+  - name: app-nodes
+    amiFamily: AmazonLinux2023
+    instanceType: m5.large
+    minSize: 2
+    maxSize: 5
+    desiredCapacity: 2
+    volumeSize: 30
+    labels:
+      role: app
+  - name: db-nodes
+    amiFamily: AmazonLinux2023
+    instanceType: r5.large                        # memory optimised
+    minSize: 1
+    maxSize: 2
+    desiredCapacity: 1
+    volumeSize: 50
+    spot: false                                   # on-demand only
+    labels:
+      role: db
+    taints:                                       # only pods that tolerate it (the database) land here
+      - key: workload
+        value: database
+        effect: NoSchedule

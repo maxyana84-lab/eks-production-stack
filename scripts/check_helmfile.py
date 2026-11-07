@@ -15,12 +15,13 @@ REQUIRED = {
     "external-secrets": "external-secrets",
     "external-dns": "external-dns",
     "karpenter": "karpenter",
+    "karpenter-config": "karpenter",
     "database": "production",
     "backend": "production",
     "frontend": "production",
 }
 # (release, must come after): the order required by the exercise
-ORDER = [("backend", "database"), ("frontend", "backend"), ("database", "external-secrets")]
+ORDER = [("backend", "database"), ("frontend", "backend"), ("database", "external-secrets"), ("karpenter-config", "karpenter")]
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--skip", action="append", default=[], help="release that is not part of the input")
