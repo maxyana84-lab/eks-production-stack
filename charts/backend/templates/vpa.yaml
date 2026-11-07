@@ -1,0 +1,16 @@
+{{- if .Values.vpa.enabled }}
+{{- /* needs the VerticalPodAutoscaler CRDs (installed by the vpa release in the helmfile) */}}
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "app.fullname" . }}
+  updatePolicy:
+    updateMode: {{ .Values.vpa.updateMode | quote }}
+{{- end }}
