@@ -147,7 +147,7 @@ kubectl get nodeclaim -w; kubectl get nodes -L role
 ```bash
 kubectl get externalsecret -n production                # STATUS SecretSynced
 kubectl get secret db-credentials -n production -o yaml
-kubectl -n production exec deploy/backend -- wget -qO- localhost:8000/ready      # {"status":"ready"}: the backend reaches the database
+kubectl -n production exec deploy/backend -- python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/ready').read().decode())"   # {"status":"ready"}: the backend reaches the database
 git grep -iE 'password|secret' -- values charts environments     # nothing but references
 ```
 Rotation: change the value in Secrets Manager (`aws secretsmanager put-secret-value ...`), wait up to `refreshInterval` (1h) or run
@@ -183,7 +183,7 @@ moved to Standard-IA after 30 days, to Glacier after 60 and deleted after 90 (`a
 
 | Experiment | Command | Expected |
 |---|---|---|
-| Kill a frontend pod | `kubectl -n production delete pod -l app.kubernetes.io/name=frontend --field-selector=status.phase=Running --wait=false` (one pod) | The Deployment recreates it, the other replica serves traffic (`minReplicas: 2`) |
+| Kill a frontend pod | `kubectl -n production delete $(kubectl -n production get pod -l app.kubernetes.io/name=frontend -o name \| head -1)` (exactly one pod) | The Deployment recreates it, the other replica serves traffic (`minReplicas: 2`) |
 | Drain an app node | `kubectl drain <app node> --ignore-daemonsets --delete-emptydir-data` | Pods reschedule; Karpenter adds a node if the capacity is missing |
 | Delete the Secret | `kubectl -n production delete secret db-credentials` | ExternalSecrets recreates it on the next sync (force-sync as above) |
 | High load | the load test above | HPA scales up, Karpenter provisions nodes |
@@ -204,8 +204,9 @@ CI (`.github/workflows`): `apps` (tests, images to GHCR), `charts`, `helmfile` (
 ## Clean-up
 
 ```bash
-helmfile destroy                                         # releases; ExternalDNS deletes its Route53 records (policy: sync)
-kubectl delete nodeclaim --all                           # Karpenter nodes are removed before the cluster
+kubectl delete nodepool --all                            # first, while Karpenter still runs: it terminates its own EC2 nodes
+helmfile destroy                                         # releases in reverse order; the ALBs go with the Ingresses, ExternalDNS deletes its Route53 records (policy: sync)
+kubectl delete pvc --all -n production; kubectl delete pvc --all -n monitoring   # Helm keeps the PVCs of StatefulSets: delete them, or the EBS volumes stay (and are billed)
 eksctl delete cluster --name $CLUSTER_NAME --region $REGION --wait
 aws cloudformation delete-stack --stack-name Karpenter-$CLUSTER_NAME
 for r in external-dns external-secrets db-backup karpenter aws-lb-controller; do
