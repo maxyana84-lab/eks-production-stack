@@ -24,3 +24,9 @@ def test_metrics_exposed():
     c.get("/missing")
     text = c.get("/metrics").get_data(as_text=True)
     assert 'service="frontend"' in text and 'code="404"' in text
+
+
+def test_config_cannot_be_broken_by_the_value(monkeypatch):
+    monkeypatch.setenv("API_URL", 'x"; alert(1); //')
+    body = client().get("/config.js").get_data(as_text=True)
+    assert body == 'window.APP_CONFIG = { apiUrl: "x\\"; alert(1); //" };'

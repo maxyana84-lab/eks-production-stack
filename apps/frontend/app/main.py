@@ -1,4 +1,5 @@
 """Frontend: serves a small static page; the page calls the backend API (URL set through API_URL)."""
+import json
 import os
 
 from flask import Flask, Response, jsonify, send_from_directory
@@ -18,7 +19,8 @@ def create_app() -> Flask:
     def config():
         # runtime configuration, so that one image works for every environment
         api_url = os.environ.get("API_URL", "http://localhost:8000")
-        return Response(f'window.APP_CONFIG = {{ apiUrl: "{api_url}" }};', mimetype="application/javascript")
+        # json.dumps escapes quotes and backslashes: the value can never break out of the string
+        return Response(f"window.APP_CONFIG = {{ apiUrl: {json.dumps(api_url)} }};", mimetype="application/javascript")
 
     @app.get("/")
     def index():

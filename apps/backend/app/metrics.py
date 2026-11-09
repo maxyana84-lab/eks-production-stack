@@ -26,7 +26,9 @@ def init_metrics(app: Flask, service: str) -> CollectorRegistry:
     @app.before_request
     def start():
         g._t0 = time.perf_counter()
-        in_flight.labels(service).inc()
+        g._counted = request.path != "/metrics"      # the scrape itself is not an active connection
+        if g._counted:
+            in_flight.labels(service).inc()
 
     @app.after_request
     def finish(response):
@@ -38,7 +40,7 @@ def init_metrics(app: Flask, service: str) -> CollectorRegistry:
 
     @app.teardown_request
     def done(_exc):
-        if hasattr(g, "_t0"):
+        if getattr(g, "_counted", False):
             in_flight.labels(service).dec()
 
     @app.get("/metrics")
