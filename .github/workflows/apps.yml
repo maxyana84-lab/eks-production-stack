@@ -25,8 +25,52 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: pytest -q
 
+  backend-postgres:
+    name: backend against a real PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: secret123
+          POSTGRES_DB: appdb
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      INTEGRATION_DB_HOST: 127.0.0.1
+      INTEGRATION_DB_PORT: "5432"
+      INTEGRATION_DB_USER: app
+      INTEGRATION_DB_PASSWORD: secret123
+      INTEGRATION_DB_NAME: appdb
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - name: Integration tests (must not be skipped)
+        run: pytest -q -rs tests/test_postgres_integration.py | tee /tmp/it.txt && ! grep -q skipped /tmp/it.txt
+
+  dockerfiles:
+    name: one gunicorn process per container (metrics correctness)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dockerfiles run gunicorn with a single worker
+        run: |
+          for app in backend frontend; do
+            grep -q -- '--workers 1 ' apps/$app/Dockerfile || { echo "apps/$app/Dockerfile must use --workers 1"; exit 1; }
+            if grep -qE -- '--workers [2-9]' apps/$app/Dockerfile; then echo "apps/$app/Dockerfile: several workers break the metrics"; exit 1; fi
+          done
+
   images:
-    needs: test
+    needs: [test, backend-postgres, dockerfiles]
     runs-on: ubuntu-latest
     permissions:
       contents: read

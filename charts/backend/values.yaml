@@ -15,6 +15,7 @@ service:
 config:
   DB_NAME: appdb
   LOG_LEVEL: info
+  CORS_ALLOW_ORIGIN: ""       # origin(s) of the frontend, set by helmfile (values/backend.yaml.gotmpl)
 
 # Credentials come from a Secret that the ExternalSecrets operator creates (see the database chart).
 # Nothing secret lives in this repository. The keys of the Secret are mapped to the DB_* variables.

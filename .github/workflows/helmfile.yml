@@ -43,6 +43,10 @@ jobs:
           helmfile -e staging template > /tmp/staging.yaml
           grep -q 'app.staging.example.com' /tmp/staging.yaml
           grep -q 'eks-staging' /tmp/staging.yaml
+      - name: The backend allows the origin of the frontend (CORS)
+        run: |
+          helmfile template -l name=backend | grep -q 'CORS_ALLOW_ORIGIN: "http://app.example.com"'
+          helmfile -e staging template -l name=backend | grep -q 'CORS_ALLOW_ORIGIN: "http://app.staging.example.com"'
       - name: Prometheus discovers ServiceMonitors from all namespaces
         run: |
           helmfile template -l name=kube-prometheus-stack | grep -q 'serviceMonitorSelectorNilUsesHelmValues\|serviceMonitorSelector: {}'
