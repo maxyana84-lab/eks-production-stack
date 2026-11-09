@@ -1,5 +1,8 @@
+{{- $scheme := ternary "https" "http" (ne .Values.certificateArn "") }}
 image:
   tag: {{ .Values.imageTag }}
+config:
+  CORS_ALLOW_ORIGIN: {{ $scheme }}://app.{{ .Values.domain }}     # the frontend calls this API from the browser
 ingress:
   host: api.{{ .Values.domain }}
 {{- if .Values.certificateArn }}

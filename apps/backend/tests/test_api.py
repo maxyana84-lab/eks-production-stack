@@ -89,3 +89,9 @@ def test_metrics_count_requests_by_route_and_code(client):
 def test_metrics_endpoint_is_not_counted(client):
     client.get("/metrics")
     assert 'path="/metrics"' not in client.get("/metrics").get_data(as_text=True)
+
+
+def test_a_scrape_is_not_an_active_connection(client):
+    client.get("/health")
+    text = client.get("/metrics").get_data(as_text=True)
+    assert 'http_requests_in_flight{service="backend"} 0.0' in text
