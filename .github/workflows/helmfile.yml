@@ -43,6 +43,15 @@ jobs:
           helmfile -e staging template > /tmp/staging.yaml
           grep -q 'app.staging.example.com' /tmp/staging.yaml
           grep -q 'eks-staging' /tmp/staging.yaml
+      - name: helmfile template (free-tier environment pins the Karpenter instance types)
+        run: |
+          helmfile -e free-tier -l name=karpenter-config template > /tmp/free.yaml
+          grep -q 'node.kubernetes.io/instance-type' /tmp/free.yaml
+          grep -q 'm7i-flex.large' /tmp/free.yaml
+          grep -q 'cpu: "6"' /tmp/free.yaml
+          helmfile template -l name=karpenter-config > /tmp/norm.yaml
+          if grep -q 'node.kubernetes.io/instance-type' /tmp/norm.yaml; then echo "the default environment must not pin instance types"; exit 1; fi
+          grep -q 'karpenter.k8s.aws/instance-category' /tmp/norm.yaml
       - name: The backend allows the origin of the frontend (CORS)
         run: |
           helmfile template -l name=backend | grep -q 'CORS_ALLOW_ORIGIN: "http://app.example.com"'

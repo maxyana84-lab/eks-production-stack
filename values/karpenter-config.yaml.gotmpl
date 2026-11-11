@@ -1,1 +1,14 @@
 clusterName: {{ .Values.clusterName }}
+{{- if or (hasKey .Values "nodeInstanceTypes") (hasKey .Values "karpenterLimits") }}
+# set by an environment (environments/free-tier.yaml): pinned instance types and smaller limits
+nodePools:
+  {{- range $pool, $types := dict "app" "nodeInstanceTypes" "database" "databaseInstanceTypes" }}
+  {{ $pool }}:
+    {{- if hasKey $.Values $types }}
+    instanceTypes: {{ toJson (index $.Values $types) }}
+    {{- end }}
+    {{- if hasKey $.Values "karpenterLimits" }}
+    limits: {{ toJson (index $.Values.karpenterLimits $pool) }}
+    {{- end }}
+  {{- end }}
+{{- end }}
