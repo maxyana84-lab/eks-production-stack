@@ -39,7 +39,7 @@ A three-tier application (frontend, backend, PostgreSQL) on EKS. Every service i
 | 10 Karpenter | release `karpenter`, `charts/karpenter-config`: NodePool for apps (c, m, r; spot and on-demand; 20 CPU and 80Gi; `WhenEmptyOrUnderutilized`), NodePool for databases (r; on-demand; taint), EC2NodeClass |
 | 11 Integration | `helmfile sync` deploys the seven releases of the table in order, plus a few add-ons (below) |
 
-Releases that are not in the exercise table but are needed: **metrics-server** (EKS does not ship it), **vpa** (recommender only),
+Releases that are not in the exercise table but are needed: **metrics-server** (new `eksctl` versions install it as an EKS add-on: skip this release with `-l 'name!=metrics-server'`, otherwise the two collide), **vpa** (recommender only),
 **aws-load-balancer-controller** (turns the Ingress objects into ALBs) and **karpenter-config** (the NodePools).
 `database` also waits for the Prometheus and VPA CRDs, and `backend` for the load balancer controller.
 
@@ -225,6 +225,26 @@ helmfile --skip-deps -l name=frontend template          # one release, without d
 ```
 CI (`.github/workflows`): `apps` (tests, images to GHCR), `charts`, `helmfile` (lint and template of every release for both environments, release graph),
 `aws` (config and policy checks).
+
+### What was found on a real run (account on the AWS free plan, eu-north-1)
+
+The stack was deployed once with `helmfile -e free-tier sync` and checked against the exercise list: pods on the right node groups, `SecretSynced`,
+ALB + ExternalDNS records (`A`, `AAAA` and the `TXT` ownership records), frontend -> backend -> PostgreSQL through the browser, a manual backup to S3
+and the restore into a temporary database (the row counts matched), all Prometheus targets `UP`, the HPA going from 2 to 6 replicas under load.
+What the CI could not show and the run did:
+
+| Symptom | Cause | Fix in the repository |
+|---|---|---|
+| `eksctl create cluster` waits 25 minutes for the node groups | the free plan refuses `m5.large` / `r5.large` | `APP_INSTANCE_TYPE` / `DB_INSTANCE_TYPE`, `environments/free-tier.yaml` |
+| the first `helmfile sync` fails on `external-secrets`: `no endpoints available for service aws-load-balancer-webhook-service` | the Service webhook of the ALB controller is registered before its pods run | `enableServiceMutatorWebhook: false` |
+| the `database` release fails: `no matches for kind ExternalSecret in version external-secrets.io/v1beta1` | the operator chart 0.19.2 no longer serves `v1beta1` | the templates use `external-secrets.io/v1` |
+| interrupting `eksctl create cluster` (Ctrl+C) leaves a half-built stack | the CloudFormation stack keeps being created | let it finish, then `eksctl delete cluster` |
+| `eksctl delete cluster` fails on the VPC: `has dependencies` | the security groups `k8s-traffic-*`, `k8s-<ns>-<ingress>-*` of the ALB controller | delete those groups, then `aws cloudformation delete-stack --stack-name eksctl-$CLUSTER_NAME-cluster` |
+
+The Karpenter load test of Exercise 10.2 (20 replicas) was **not** run: the account had a quota of 16 vCPU.
+
+Order of the clean-up that worked: `helmfile destroy`, then the PVCs, then the Route53 records that ExternalDNS left (the `AAAA` ones too: `Type` other than `NS` / `SOA`),
+then `eksctl delete cluster`; if it stops on the VPC, the security groups above; then the Karpenter stack, the roles, the bucket (empty it with its versions), the secret and the hosted zone.
 
 ## Clean-up
 
