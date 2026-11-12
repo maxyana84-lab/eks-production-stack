@@ -10,9 +10,10 @@ nodeClass:
 
 nodePools:
   # application workloads: frontend, backend, monitoring
-  - name: app
+  app:
     labels: {role: app}
     taints: []
+    instanceTypes: []                # empty = any type of the categories below; a list pins the types (free-plan accounts)
     instanceCategories: [c, m, r]
     capacityTypes: [spot, on-demand]
     limits: {cpu: "20", memory: 80Gi}
@@ -20,10 +21,11 @@ nodePools:
     consolidateAfter: 1m
     expireAfter: 720h
   # databases: memory optimised, on-demand only (never spot), isolated by a taint
-  - name: database
+  database:
     labels: {role: db}
     taints:
       - {key: workload, value: database, effect: NoSchedule}
+    instanceTypes: []
     instanceCategories: [r]
     capacityTypes: [on-demand]
     limits: {cpu: "8", memory: 64Gi}

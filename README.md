@@ -67,6 +67,7 @@ export CLUSTER_NAME=eks-production REGION=us-east-1 KARPENTER_VERSION=1.6.3
 export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 export HOSTED_ZONE_ID=Z0123456789ABC                 # your hosted zone
 export BACKUP_BUCKET=${CLUSTER_NAME}-db-backups SECRET_PREFIX=my-app/
+export APP_INSTANCE_TYPE=m5.large DB_INSTANCE_TYPE=r5.large      # free-plan account: see "Free-plan AWS account" below
 
 # 1. Karpenter IAM: node role, controller policy, SQS queue (before the cluster: the node role is mapped in aws/cluster.yaml)
 ./aws/karpenter-cloudformation.sh
@@ -96,6 +97,30 @@ helmfile diff          # from now on: preview every change, or `helmfile apply` 
 ```
 
 `helmfile -e staging sync` uses `environments/staging.yaml` on top of `environments/default.yaml`.
+
+## Free-plan AWS account (what differs)
+
+An account on the AWS **free plan** cannot launch most EC2 types: `eksctl create cluster` with `m5.large` / `r5.large` waits 25 minutes for
+the node groups and fails, and the Auto Scaling activity says `The specified instance type is not eligible for Free Tier`
+(`aws autoscaling describe-scaling-activities`). Route 53 domain registration is not available on such an account either (buy the domain at
+another registrar and delegate it to a Route 53 hosted zone).
+
+```bash
+aws ec2 describe-instance-types --region $REGION --filters Name=free-tier-eligible,Values=true \
+  --query 'InstanceTypes[].[InstanceType,VCpuInfo.DefaultVCpus,MemoryInfo.SizeInMiB]' --output table
+aws service-quotas get-service-quota --service-code ec2 --quota-code L-1216C47A --region $REGION --query Quota.Value   # vCPU quota
+```
+
+In `eu-north-1` (November 2026) the list was `m7i-flex.large` (2 vCPU, 8 GiB), `c7i-flex.large` (2 vCPU, 4 GiB), `t3.small`, `t4g.small`, `t4g.micro`, `t3.micro`,
+and the vCPU quota was 16. What changes:
+
+- node groups: `export APP_INSTANCE_TYPE=m7i-flex.large DB_INSTANCE_TYPE=m7i-flex.large` before `envsubst < aws/cluster.yaml | eksctl create cluster -f -`
+  (the separation app nodes / db nodes, the labels and the taint stay: both groups are just smaller than `m5.large` / `r5.large`);
+- Karpenter: `helmfile -e free-tier sync` (`environments/free-tier.yaml`) pins the NodePools to the eligible types and lowers their limits so that
+  the managed nodes (3 x 2 vCPU) plus Karpenter stay below the quota. NodePools that may use any `c` / `m` / `r` type would try to launch ineligible
+  ones and fail with the same error;
+- the load test of Exercise 10.2 ("20 replicas") needs more nodes than such an account may run; scale a Deployment with larger requests instead
+  and note the difference.
 
 ## 2. Verification checklist (Exercise 11.2)
 

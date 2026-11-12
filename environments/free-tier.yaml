@@ -1,0 +1,11 @@
+# Account on the AWS free plan: EC2 launches only the instance types listed by
+#   aws ec2 describe-instance-types --region <region> --filters Name=free-tier-eligible,Values=true
+# (eu-north-1 in November 2026: c7i-flex.large 2 vCPU / 4 GiB, m7i-flex.large 2 vCPU / 8 GiB, t3.small, t4g.*, t3.micro).
+# Use it with:  helmfile -e free-tier sync        (on top of environments/default.yaml)
+nodeInstanceTypes: [m7i-flex.large, c7i-flex.large]     # Karpenter pool "app"
+databaseInstanceTypes: [m7i-flex.large]                  # Karpenter pool "database": the one with 8 GiB
+# The vCPU quota of such an account was 16 (aws service-quotas get-service-quota --service-code ec2 --quota-code L-1216C47A):
+# 3 managed nodes (6 vCPU) + Karpenter (at most 6 + 2 vCPU) stay below it.
+karpenterLimits:
+  app: {cpu: "6", memory: 24Gi}
+  database: {cpu: "2", memory: 8Gi}

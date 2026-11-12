@@ -1,5 +1,6 @@
 # One declarative deployment for the whole stack:   helmfile lint | diff | sync
 #   helmfile -e staging sync      uses environments/staging.yaml on top of environments/default.yaml
+#   helmfile -e free-tier sync    the same for an AWS free-plan account (environments/free-tier.yaml)
 #
 # Release order (needs:) is the dependency graph, helmfile deploys it in this order:
 #   kube-prometheus-stack, external-secrets, external-dns, karpenter           (no dependencies)
@@ -16,6 +17,10 @@ environments:
     values:
       - environments/default.yaml
       - environments/staging.yaml
+  free-tier:                       # AWS free-plan account: only free-tier-eligible instance types
+    values:
+      - environments/default.yaml
+      - environments/free-tier.yaml
 
 ---
 repositories:

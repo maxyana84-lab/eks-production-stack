@@ -1,43 +1,49 @@
-{{- range .Values.nodePools }}
+{{- range $name, $pool := .Values.nodePools }}
 ---
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
-  name: {{ .name }}
+  name: {{ $name }}
 spec:
   template:
     metadata:
       labels:
-        {{- toYaml .labels | nindent 8 }}
+        {{- toYaml $pool.labels | nindent 8 }}
     spec:
       nodeClassRef:
         group: karpenter.k8s.aws
         kind: EC2NodeClass
         name: {{ $.Values.nodeClass.name }}
-      {{- with .taints }}
+      {{- with $pool.taints }}
       taints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       requirements:
+        {{- if $pool.instanceTypes }}
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: {{ toJson $pool.instanceTypes }}
+        {{- else }}
         - key: karpenter.k8s.aws/instance-category
           operator: In
-          values: {{ toJson .instanceCategories }}
+          values: {{ toJson $pool.instanceCategories }}
         - key: karpenter.k8s.aws/instance-generation
           operator: Gt
           values: ["4"]
+        {{- end }}
         - key: karpenter.sh/capacity-type
           operator: In
-          values: {{ toJson .capacityTypes }}
+          values: {{ toJson $pool.capacityTypes }}
         - key: kubernetes.io/arch
           operator: In
           values: ["amd64"]
         - key: kubernetes.io/os
           operator: In
           values: ["linux"]
-      expireAfter: {{ .expireAfter }}
+      expireAfter: {{ $pool.expireAfter }}
   limits:
-    {{- toYaml .limits | nindent 4 }}
+    {{- toYaml $pool.limits | nindent 4 }}
   disruption:
-    consolidationPolicy: {{ .consolidationPolicy }}
-    consolidateAfter: {{ .consolidateAfter }}
+    consolidationPolicy: {{ $pool.consolidationPolicy }}
+    consolidateAfter: {{ $pool.consolidateAfter }}
 {{- end }}

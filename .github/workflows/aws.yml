@@ -18,6 +18,8 @@ jobs:
       HOSTED_ZONE_ID: Z0123456789ABC
       BACKUP_BUCKET: eks-production-db-backups
       SECRET_PREFIX: my-app/
+      APP_INSTANCE_TYPE: m5.large
+      DB_INSTANCE_TYPE: r5.large
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
@@ -40,6 +42,7 @@ jobs:
           db = ng["db-nodes"]
           assert (db["labels"], db["minSize"], db["maxSize"], db["spot"]) == ({"role": "db"}, 1, 2, False)
           assert db["taints"] == [{"key": "workload", "value": "database", "effect": "NoSchedule"}]
+          assert (ng["app-nodes"]["instanceType"], db["instanceType"]) == ("m5.large", "r5.large")
           assert c["metadata"]["tags"]["karpenter.sh/discovery"] == "eks-production"
           print("cluster config OK")
           PY
