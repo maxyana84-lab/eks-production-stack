@@ -6,3 +6,6 @@ serviceAccount:
   name: aws-load-balancer-controller
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::{{ .Values.accountId }}:role/{{ .Values.clusterName }}-aws-lb-controller
+# The stack only uses Ingress objects. The webhook that mutates every Service of the cluster makes any release that creates a Service
+# fail with "no endpoints available for service aws-load-balancer-webhook-service" while the controller is still starting.
+enableServiceMutatorWebhook: false
